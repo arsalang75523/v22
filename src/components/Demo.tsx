@@ -1,101 +1,106 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import sdk from "@farcaster/frame-sdk";
+import { useEffect, useCallback, useState, useMemo } from "react";
+import sdk, { Context, FrameNotificationDetails } from "@farcaster/frame-sdk";
+import { Button } from "~/components/ui/Button";
+import { useAccount } from "wagmi";
+import { useSession } from "next-auth/react";
+import { Label } from "~/components/ui/label";
 
-type GameState = {
-  territories: (string | null)[]; // آرایه‌ای که مالک هر منطقه را نشان می‌دهد
-  players: string[]; // لیست بازیکنان
-  currentTurn: string; // بازیکنی که نوبتش است
-};
-
-export default function StrategyGame({
-  title = "بازی استراتژی آنلاین",
-}: {
-  title?: string;
-}) {
+export default function Demo({ title }: { title?: string } = { title: "Farcaster Mancala Game" }) {
   const [isSDKLoaded, setIsSDKLoaded] = useState(false);
-  const [user, setUser] = useState<{ username: string } | null>(null); // مشخص کردن نوع کاربر
-  const [gameState, setGameState] = useState<GameState | null>(null);
+  const [context, setContext] = useState<Context.FrameContext>();
+  const [players, setPlayers] = useState<string[]>([]);
+  const [currentTurn, setCurrentTurn] = useState<string | null>(null);
+  const [gameBoard, setGameBoard] = useState<number[]>(Array(24).fill(4)); // 24 خانه، هر کدام 4 مهره
+  const [lastEvent, setLastEvent] = useState<string>("");
+
+  const { address, isConnected } = useAccount();
+  const { data: session } = useSession();
+
+  const addPlayer = useCallback(() => {
+    if (players.length < 4) { // برای بازی منچ 4 بازیکن می‌تواند بازی کند
+      setPlayers((prev) => [...prev, session?.user?.name || "Player"]);
+    }
+  }, [players, session]);
 
   useEffect(() => {
-    const loadSDK = async () => {
+    const load = async () => {
       const context = await sdk.context;
-      setUser(context.user as { username: string }); // تبدیل نوع داده به کاربری که نام کاربری دارد
+      setContext(context);
       setIsSDKLoaded(true);
+      setCurrentTurn(players[0] || null);
     };
 
-    if (!isSDKLoaded) {
-      loadSDK();
+    if (!isSDKLoaded && sdk) {
+      load();
     }
-  }, [isSDKLoaded]);
+  }, [isSDKLoaded, players]);
 
-  const startGame = useCallback(() => {
-    const newGameState: GameState = {
-      territories: Array(10).fill(null), // 10 منطقه
-      players: [user!.username], // بازیکن اول
-      currentTurn: user!.username, // اولین نوبت
-    };
-    setGameState(newGameState);
-  }, [user]);
+  const rollDice = useCallback(() => {
+    // شبیه‌سازی پرتاب تاس برای حرکت در بازی منچ
+    return Math.floor(Math.random() * 6) + 1;
+  }, []);
 
-  const takeTurn = useCallback(
-    (territoryIndex: number) => {
-      if (!gameState || gameState.currentTurn !== user!.username) {
-        alert("نوبت شما نیست!");
-        return;
-      }
+  const makeMove = useCallback((index: number) => {
+    if (currentTurn !== session?.user?.name) {
+      alert("It's not your turn!");
+      return;
+    }
 
-      setGameState((prevState) => {
-        if (!prevState) return prevState;
+    // شبیه‌سازی حرکت مهره‌ها با توجه به تاس
+    const dice = rollDice();
+    let newBoard = [...gameBoard];
+    newBoard[index] -= dice; // مهره‌ها کم می‌شوند
+    setGameBoard(newBoard);
 
-        const newTerritories = [...prevState.territories];
-        newTerritories[territoryIndex] = user!.username;
+    // تغییر نوبت به بازیکن بعدی
+    const nextPlayerIndex = (players.indexOf(currentTurn) + 1) % players.length;
+    setCurrentTurn(players[nextPlayerIndex]);
+    setLastEvent(`Player ${currentTurn} moved piece from index ${index}`);
+  }, [gameBoard, currentTurn, players, session?.user?.name, rollDice]);
 
-        const nextPlayerIndex =
-          (prevState.players.indexOf(user!.username) + 1) %
-          prevState.players.length;
-
-        return {
-          ...prevState,
-          territories: newTerritories,
-          currentTurn: prevState.players[nextPlayerIndex],
-        };
-      });
-    },
-    [gameState, user]
-  );
+  const resetGame = useCallback(() => {
+    setGameBoard(Array(24).fill(4));
+    setPlayers([]);
+    setCurrentTurn(null);
+    setLastEvent("Game reset.");
+  }, []);
 
   if (!isSDKLoaded) {
-    return <div>در حال بارگذاری...</div>;
+    return <div>Loading...</div>;
   }
 
   return (
     <div className="w-[400px] mx-auto py-4">
       <h1 className="text-2xl font-bold text-center mb-4">{title}</h1>
-      {!gameState && (
-        <button onClick={startGame} className="mb-4 px-4 py-2 bg-blue-500 text-white">
-          شروع بازی جدید
-        </button>
-      )}
-      {gameState && (
-        <div>
-          <p>نوبت: {gameState.currentTurn}</p>
-          <div className="grid grid-cols-5 gap-2 mt-4">
-            {gameState.territories.map((territory, index) => (
-              <button
-                key={index}
-                className={`p-4 border ${
-                  territory ? "bg-green-400" : "bg-gray-200"
-                }`}
-                onClick={() => takeTurn(index)}
-              >
-                {territory || "خالی"}
-              </button>
-            ))}
-          </div>
+      <div className="mb-4">
+        <p>{players.length < 4 ? "Waiting for more players..." : `Players: ${players.join(", ")}`}</p>
+        {players.length < 4 && (
+          <Button onClick={addPlayer}>Add Player</Button>
+        )}
+      </div>
+      <div className="mb-4">
+        <h2 className="font-2xl font-bold">Game Board</h2>
+        <div className="grid grid-cols-6 gap-2">
+          {gameBoard.map((piles, index) => (
+            <div
+              key={index}
+              className="p-4 border bg-gray-200 text-center"
+              onClick={() => makeMove(index)}
+            >
+              <div>{piles} pieces</div>
+            </div>
+          ))}
         </div>
-      )}
+      </div>
+      <div className="mb-4">
+        <p>Current Turn: {currentTurn}</p>
+        <p>Last Event: {lastEvent || "None"}</p>
+      </div>
+      <div className="mb-4">
+        <Button onClick={resetGame}>Reset Game</Button>
+      </div>
     </div>
   );
 }

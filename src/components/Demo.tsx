@@ -1,87 +1,101 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Button } from "~/components/ui/Button";
-import { Input } from "~/components/ui/input";
-import { Label } from "~/components/ui/label";
+import sdk from "@farcaster/frame-sdk";
 
-export default function GameDemo({ title }: { title?: string } = { title: "Number Guessing Game" }) {
+type GameState = {
+  territories: (string | null)[]; // آرایه‌ای که مالک هر منطقه را نشان می‌دهد
+  players: string[]; // لیست بازیکنان
+  currentTurn: string; // بازیکنی که نوبتش است
+};
+
+export default function StrategyGame({
+  title = "بازی استراتژی آنلاین",
+}: {
+  title?: string;
+}) {
   const [isSDKLoaded, setIsSDKLoaded] = useState(false);
-  const [gameMessage, setGameMessage] = useState<string | null>("Start guessing!");
-  const [userGuess, setUserGuess] = useState<number | null>(null);
-  const [randomNumber, setRandomNumber] = useState<number | null>(null);
-  const [attempts, setAttempts] = useState(0);
+  const [user, setUser] = useState<{ username: string } | null>(null); // مشخص کردن نوع کاربر
+  const [gameState, setGameState] = useState<GameState | null>(null);
 
   useEffect(() => {
-    const load = async () => {
-      console.log("Game SDK Loaded");
-      setRandomNumber(Math.floor(Math.random() * 100) + 1); // Generate a random number between 1 and 100
+    const loadSDK = async () => {
+      const context = await sdk.context;
+      setUser(context.user as { username: string }); // تبدیل نوع داده به کاربری که نام کاربری دارد
+      setIsSDKLoaded(true);
     };
 
     if (!isSDKLoaded) {
-      setIsSDKLoaded(true);
-      load();
+      loadSDK();
     }
   }, [isSDKLoaded]);
 
-  const handleGuess = useCallback(() => {
-    if (userGuess === null || randomNumber === null) {
-      setGameMessage("Please enter a number.");
-      return;
-    }
+  const startGame = useCallback(() => {
+    const newGameState: GameState = {
+      territories: Array(10).fill(null), // 10 منطقه
+      players: [user!.username], // بازیکن اول
+      currentTurn: user!.username, // اولین نوبت
+    };
+    setGameState(newGameState);
+  }, [user]);
 
-    setAttempts((prev) => prev + 1);
+  const takeTurn = useCallback(
+    (territoryIndex: number) => {
+      if (!gameState || gameState.currentTurn !== user!.username) {
+        alert("نوبت شما نیست!");
+        return;
+      }
 
-    if (userGuess === randomNumber) {
-      setGameMessage(`🎉 Congratulations! You guessed it in ${attempts + 1} attempts.`);
-    } else if (userGuess > randomNumber) {
-      setGameMessage("📉 Too high! Try again.");
-    } else {
-      setGameMessage("📈 Too low! Try again.");
-    }
-  }, [userGuess, randomNumber, attempts]);
+      setGameState((prevState) => {
+        if (!prevState) return prevState;
 
-  const resetGame = useCallback(() => {
-    setRandomNumber(Math.floor(Math.random() * 100) + 1);
-    setAttempts(0);
-    setUserGuess(null);
-    setGameMessage("Start guessing!");
-  }, []);
+        const newTerritories = [...prevState.territories];
+        newTerritories[territoryIndex] = user!.username;
+
+        const nextPlayerIndex =
+          (prevState.players.indexOf(user!.username) + 1) %
+          prevState.players.length;
+
+        return {
+          ...prevState,
+          territories: newTerritories,
+          currentTurn: prevState.players[nextPlayerIndex],
+        };
+      });
+    },
+    [gameState, user]
+  );
 
   if (!isSDKLoaded) {
-    return <div>Loading...</div>;
+    return <div>در حال بارگذاری...</div>;
   }
 
   return (
-    <div className="w-[300px] mx-auto py-2 px-2">
+    <div className="w-[400px] mx-auto py-4">
       <h1 className="text-2xl font-bold text-center mb-4">{title}</h1>
-      <div className="mb-4">
-        <Label className="text-xs font-semibold text-gray-500 mb-1" htmlFor="guess-input">
-          Your Guess
-        </Label>
-        <Input
-          id="guess-input"
-          type="number"
-          value={userGuess || ""}
-          onChange={(e) => setUserGuess(Number(e.target.value))}
-          className="mb-2"
-          step="1"
-          min="1"
-          max="100"
-        />
-      </div>
-      <Button onClick={handleGuess} className="mb-4">
-        Submit Guess
-      </Button>
-      <Button onClick={resetGame} className="mb-4">
-        Reset Game
-      </Button>
-      <div className="p-4 mt-2 bg-gray-100 dark:bg-gray-800 rounded-lg">
-        <pre className="font-mono text-xs whitespace-pre-wrap break-words max-w-[260px]">
-          {gameMessage}
-        </pre>
-      </div>
+      {!gameState && (
+        <button onClick={startGame} className="mb-4 px-4 py-2 bg-blue-500 text-white">
+          شروع بازی جدید
+        </button>
+      )}
+      {gameState && (
+        <div>
+          <p>نوبت: {gameState.currentTurn}</p>
+          <div className="grid grid-cols-5 gap-2 mt-4">
+            {gameState.territories.map((territory, index) => (
+              <button
+                key={index}
+                className={`p-4 border ${
+                  territory ? "bg-green-400" : "bg-gray-200"
+                }`}
+                onClick={() => takeTurn(index)}
+              >
+                {territory || "خالی"}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
- 

@@ -1,69 +1,74 @@
-import { gql, GraphQLClient } from "graphql-request";
-import { useEffect, useState } from "react";
+"use client";
 
-// Define the type for the API response
-type SubjectToken = {
-  buySideVolume: string;
-  currentPriceInMoxie: string;
-  name: string;
-  symbol: string;
-};
+import { useCallback, useState } from "react";
+import { Button } from "~/components/ui/Button";
 
-type QueryResponse = {
-  subjectTokens: SubjectToken[];
-};
+export default function Demo({
+  title = "Frames v2 Demo",
+}: {
+  title?: string;
+}) {
+  const [checkingEarnings, setCheckingEarnings] = useState(false);
+  const [earningsResult, setEarningsResult] = useState<string | null>(null);
+  const [earningsError, setEarningsError] = useState<string | null>(null);
 
-const graphQLClient = new GraphQLClient(
-  "https://api.studio.thegraph.com/query/23537/moxie_protocol_stats_mainnet/version/latest"
-);
+  const checkEarnings = useCallback(async () => {
+    try {
+      setCheckingEarnings(true);
+      setEarningsError(null);
+      setEarningsResult(null);
 
-const query = gql`
-query MyQuery {
-  subjectTokens(orderBy: buySideVolume, orderDirection: desc) {
-    buySideVolume
-    currentPriceInMoxie
-    name
-    symbol
-  }
-}
-`;
+      // Simulate an API call or SDK action to check earnings.
+      const earningsData = await fetch("/components/demo", {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+      }).then((res) => {
+        if (!res.ok) throw new Error("Failed to fetch earnings.");
+        return res.json();
+      });
 
-function Demo() {
-  const [coins, setCoins] = useState<SubjectToken[]>([]);
-
-  useEffect(() => {
-    const fetchTrendingCoins = async () => {
-      try {
-        const data: QueryResponse = await graphQLClient.request(query);
-        setCoins(data.subjectTokens.slice(0, 4)); // Limit to top 4 coins for frame buttons
-      } catch (error) {
-        console.error("Error fetching trending coins:", error);
-      }
-    };
-
-    fetchTrendingCoins();
+      setEarningsResult(`You have earned ${earningsData.amount} so far.`);
+    } catch (error: any) {
+      setEarningsError(error.message || "An unexpected error occurred.");
+    } finally {
+      setCheckingEarnings(false);
+    }
   }, []);
 
-  if (coins.length === 0) {
-    return <div>Loading...</div>;
-  }
-
   return (
-    <div>
-      <meta property="fc:frame" content="vNext" />
-      <meta
-        property="fc:frame:image"
-        content="https://example.com/trending-coins-image.png"
-      />
-      {coins.map((coin, index) => (
-        <meta
-          key={index}
-          property={`fc:frame:button:${index + 1}`}
-          content={`${coin.name} (${coin.symbol}) - Volume: ${coin.buySideVolume}`}
-        />
-      ))}
+    <div
+      style={{
+        paddingTop: 20,
+        paddingBottom: 20,
+        paddingLeft: 20,
+        paddingRight: 20,
+      }}
+    >
+      <div className="w-[300px] mx-auto py-2 px-2">
+        <h1 className="text-2xl font-bold text-center mb-4">{title}</h1>
+
+        <div className="mb-4">
+          <Button
+            onClick={checkEarnings}
+            disabled={checkingEarnings}
+            isLoading={checkingEarnings}
+          >
+            Check Your Earnings
+          </Button>
+        </div>
+
+        {earningsResult && (
+          <div className="my-2 text-sm text-green-600">
+            {earningsResult}
+          </div>
+        )}
+
+        {earningsError && (
+          <div className="my-2 text-sm text-red-600">
+            Error: {earningsError}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
-
-export default Demo;
